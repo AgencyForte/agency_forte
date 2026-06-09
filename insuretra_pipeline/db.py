@@ -214,10 +214,11 @@ def generate_events_sql(conn) -> None:
           a.county,
           'high',
           encode(digest('CARRIER_LAND_GRAB|' || s.agency_tdi_id || '|' || s.carrier_naic || '|' || COALESCE(s.appointment_type, ''), 'sha256'), 'hex'),
-          jsonb_build_object('appointment_type', s.appointment_type, 'effective_date', s.effective_date)
+          jsonb_build_object('appointment_type', s.appointment_type, 'effective_date', s.effective_date, 'line_of_business', cm.line_of_business)
         FROM stage_agency_appointments s
         JOIN master_agencies a ON a.agency_tdi_id = s.agency_tdi_id
         LEFT JOIN master_agency_appointments m ON m.structural_hash = s.structural_hash
+        LEFT JOIN carrier_to_line_matrix cm ON cm.carrier_naic = s.carrier_naic
         WHERE m.structural_hash IS NULL
           AND a.first_seen_date <= CURRENT_DATE - INTERVAL '30 days'
         ON CONFLICT (event_fingerprint) DO NOTHING
@@ -268,13 +269,15 @@ def generate_events_sql(conn) -> None:
           a.county,
           'high',
           encode(digest('LOB_ENCROACHMENT|' || l.agent_npn || '|' || l.agency_tdi_id || '|' || CURRENT_DATE::TEXT, 'sha256'), 'hex'),
-          jsonb_build_object('source_rule', 'veteran_hire_overlap', 'lines_overlapped', overlapping.lines)
+          jsonb_build_object('source_rule', 'veteran_hire_overlap', 'lines_overlapped', overlapping.lines, 'historical_carriers', overlapping.historical_carriers)
         FROM stage_agent_agency_links l
         LEFT JOIN master_agent_agency_links m ON m.structural_hash = l.structural_hash
         JOIN master_agents ma ON ma.agent_npn = l.agent_npn
         JOIN master_agencies a ON a.agency_tdi_id = l.agency_tdi_id
         JOIN (
-          SELECT agent_npn, array_agg(DISTINCT cm.line_of_business) AS lines
+          SELECT agent_npn, 
+                 array_agg(DISTINCT cm.line_of_business) AS lines,
+                 jsonb_agg(DISTINCT jsonb_build_object('carrier_naic', map.carrier_naic, 'carrier_name', map.carrier_name)) AS historical_carriers
           FROM master_agent_appointments map
           JOIN carrier_to_line_matrix cm ON cm.carrier_naic = map.carrier_naic
           WHERE map.is_active
@@ -282,7 +285,10 @@ def generate_events_sql(conn) -> None:
         ) overlapping ON overlapping.agent_npn = l.agent_npn
         WHERE m.structural_hash IS NULL
           AND LOWER(l.association_type) = 'sub-agent'
-          -- assume veteran if seen in master for a while or has appointments
+          AND (
+            DATE_PART('year', AGE(CURRENT_DATE, ma.first_seen_date)) * 12
+            + DATE_PART('month', AGE(CURRENT_DATE, ma.first_seen_date))
+          ) >= 36
         ON CONFLICT (event_fingerprint) DO NOTHING
         """
     )

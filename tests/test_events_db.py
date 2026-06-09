@@ -75,6 +75,8 @@ def test_lob_encroachment_and_geo_routing(db_connection):
     assert len(events) == 1
     assert events[0]["event_type"] == "LOB_ENCROACHMENT"
     assert "Property and Casualty" in events[0]["payload"]["lines_overlapped"]
+    assert "historical_carriers" in events[0]["payload"]
+    assert events[0]["payload"]["historical_carriers"][0]["carrier_naic"] == "C_PNC"
     
     # Test Geo-Routing (5.1)
     # Seed geo zip
