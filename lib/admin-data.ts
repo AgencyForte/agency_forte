@@ -92,3 +92,27 @@ export async function getMarketEventById(eventId: string): Promise<{ configured:
     error: error?.message
   };
 }
+
+export type ArbitrageTarget = {
+  target_agent_npn: string;
+  agent_name: string;
+  competitor_agency_id: string;
+  competitor_agency_name: string;
+  missing_buyer_carriers: Array<{ carrier_naic: string; carrier_name: string }>;
+  agent_total_carriers: number;
+};
+
+export async function getMarketAccessArbitrage(buyerId: string): Promise<{ configured: boolean; rows: ArbitrageTarget[]; error?: string }> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase.configured) {
+    return { configured: false, rows: [] };
+  }
+
+  const { data, error } = await supabase.client.rpc("get_market_access_arbitrage", { p_buyer_agency_id: buyerId });
+
+  return {
+    configured: true,
+    rows: (data ?? []) as ArbitrageTarget[],
+    error: error?.message
+  };
+}

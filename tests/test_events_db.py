@@ -35,6 +35,9 @@ def test_competitor_bleeding_and_market_arbitrage(db_connection):
     # Assert Agent Bleeding (36+ months)
     agent_bleed = next((e for e in events if e["event_type"] == "COMPETITOR_BLEEDING" and e["target_agent_npn"] == "9001"), None)
     assert agent_bleed is not None
+    assert agent_bleed["payload"]["agency_name"] == "Agency 1"
+    assert agent_bleed["payload"]["agent_name"] == "Agent 1"
+    assert agent_bleed["payload"]["tenure_months"] == 37
     assert "departing_carriers" in agent_bleed["payload"]
     assert agent_bleed["payload"]["departing_carriers"][0]["carrier_naic"] == "C_DEP"
 
@@ -42,6 +45,8 @@ def test_competitor_bleeding_and_market_arbitrage(db_connection):
     carrier_bleed = next((e for e in events if e["event_type"] == "COMPETITOR_BLEEDING" and e["target_agent_npn"] is None and e["target_agency_id"] == "npn:ag1"), None)
     assert carrier_bleed is not None
     assert carrier_bleed["payload"]["source_rule"] == "agency_lost_carrier"
+    assert carrier_bleed["payload"]["agency_name"] == "Agency 1"
+    assert carrier_bleed["payload"]["tenure_months"] == 25
 
     assert "COMPETITOR_BLEEDING" in event_types
 
@@ -74,6 +79,9 @@ def test_lob_encroachment_and_geo_routing(db_connection):
     events = db_connection.execute("SELECT event_type, payload FROM market_timeline WHERE target_agent_npn = '9003'").fetchall()
     assert len(events) == 1
     assert events[0]["event_type"] == "LOB_ENCROACHMENT"
+    assert events[0]["payload"]["agency_name"] == "Agency 3"
+    assert events[0]["payload"]["agent_name"] == "Veteran"
+    assert events[0]["payload"]["tenure_months"] >= 48
     assert "Property and Casualty" in events[0]["payload"]["lines_overlapped"]
     assert "historical_carriers" in events[0]["payload"]
     assert events[0]["payload"]["historical_carriers"][0]["carrier_naic"] == "C_PNC"

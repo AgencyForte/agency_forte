@@ -4,7 +4,8 @@ const navItems = [
   { href: "/admin/pipeline-runs", label: "Pipeline Runs" },
   { href: "/admin/events", label: "Events" },
   { href: "/admin/suppressed-severances", label: "Suppressed Severances" },
-  { href: "/admin/anomalies", label: "Anomalies" }
+  { href: "/admin/anomalies", label: "Anomalies" },
+  { href: "/admin/arbitrage", label: "Arbitrage Hunter" }
 ];
 
 export function AdminShell({ children }: Readonly<{ children: React.ReactNode }>) {

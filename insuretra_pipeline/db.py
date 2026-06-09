@@ -146,15 +146,20 @@ def generate_events_sql(conn) -> None:
           encode(digest('COMPETITOR_BLEEDING|' || m.agent_npn || '|' || m.agency_tdi_id || '|' || CURRENT_DATE::TEXT, 'sha256'), 'hex'),
           jsonb_build_object(
             'source_rule', '36_month_tenure_filter', 
+            'agency_name', a.name,
+            'agent_name', ma.full_name,
+            'tenure_months', DATE_PART('year', AGE(CURRENT_DATE, COALESCE(m.relationship_started_at, m.first_seen_date))) * 12 + DATE_PART('month', AGE(CURRENT_DATE, COALESCE(m.relationship_started_at, m.first_seen_date))),
             'association_type', m.association_type,
             'departing_carriers', COALESCE(carriers.carrier_list, '[]'::jsonb)
           )
         FROM master_agent_agency_links m
+        JOIN master_agents ma ON ma.agent_npn = m.agent_npn
         LEFT JOIN stage_agent_agency_links s ON s.structural_hash = m.structural_hash
         LEFT JOIN master_agencies a ON a.agency_tdi_id = m.agency_tdi_id
         LEFT JOIN LATERAL (
-          SELECT jsonb_agg(jsonb_build_object('carrier_naic', map.carrier_naic, 'carrier_name', map.carrier_name)) AS carrier_list
+          SELECT jsonb_agg(jsonb_build_object('carrier_naic', map.carrier_naic, 'carrier_name', map.carrier_name, 'line_of_business', cm.line_of_business)) AS carrier_list
           FROM master_agent_appointments map
+          LEFT JOIN carrier_to_line_matrix cm ON cm.carrier_naic = map.carrier_naic
           WHERE map.agent_npn = m.agent_npn AND map.is_active
         ) carriers ON TRUE
         WHERE m.is_active
@@ -184,6 +189,8 @@ def generate_events_sql(conn) -> None:
           encode(digest('COMPETITOR_BLEEDING_CARRIER|' || m.agency_tdi_id || '|' || m.carrier_naic || '|' || COALESCE(m.appointment_type, '') || '|' || CURRENT_DATE::TEXT, 'sha256'), 'hex'),
           jsonb_build_object(
             'source_rule', 'agency_lost_carrier',
+            'agency_name', a.name,
+            'tenure_months', DATE_PART('year', AGE(CURRENT_DATE, COALESCE(m.effective_date, m.first_seen_date))) * 12 + DATE_PART('month', AGE(CURRENT_DATE, COALESCE(m.effective_date, m.first_seen_date))),
             'appointment_type', m.appointment_type,
             'effective_date', m.effective_date
           )
@@ -214,7 +221,7 @@ def generate_events_sql(conn) -> None:
           a.county,
           'high',
           encode(digest('CARRIER_LAND_GRAB|' || s.agency_tdi_id || '|' || s.carrier_naic || '|' || COALESCE(s.appointment_type, ''), 'sha256'), 'hex'),
-          jsonb_build_object('appointment_type', s.appointment_type, 'effective_date', s.effective_date, 'line_of_business', cm.line_of_business)
+          jsonb_build_object('agency_name', a.name, 'appointment_type', s.appointment_type, 'effective_date', s.effective_date, 'line_of_business', cm.line_of_business)
         FROM stage_agency_appointments s
         JOIN master_agencies a ON a.agency_tdi_id = s.agency_tdi_id
         LEFT JOIN master_agency_appointments m ON m.structural_hash = s.structural_hash
@@ -269,7 +276,7 @@ def generate_events_sql(conn) -> None:
           a.county,
           'high',
           encode(digest('LOB_ENCROACHMENT|' || l.agent_npn || '|' || l.agency_tdi_id || '|' || CURRENT_DATE::TEXT, 'sha256'), 'hex'),
-          jsonb_build_object('source_rule', 'veteran_hire_overlap', 'lines_overlapped', overlapping.lines, 'historical_carriers', overlapping.historical_carriers)
+          jsonb_build_object('source_rule', 'veteran_hire_overlap', 'agency_name', a.name, 'agent_name', ma.full_name, 'tenure_months', DATE_PART('year', AGE(CURRENT_DATE, ma.first_seen_date)) * 12 + DATE_PART('month', AGE(CURRENT_DATE, ma.first_seen_date)), 'lines_overlapped', overlapping.lines, 'historical_carriers', overlapping.historical_carriers)
         FROM stage_agent_agency_links l
         LEFT JOIN master_agent_agency_links m ON m.structural_hash = l.structural_hash
         JOIN master_agents ma ON ma.agent_npn = l.agent_npn
@@ -277,7 +284,7 @@ def generate_events_sql(conn) -> None:
         JOIN (
           SELECT agent_npn, 
                  array_agg(DISTINCT cm.line_of_business) AS lines,
-                 jsonb_agg(DISTINCT jsonb_build_object('carrier_naic', map.carrier_naic, 'carrier_name', map.carrier_name)) AS historical_carriers
+                 jsonb_agg(DISTINCT jsonb_build_object('carrier_naic', map.carrier_naic, 'carrier_name', map.carrier_name, 'line_of_business', cm.line_of_business)) AS historical_carriers
           FROM master_agent_appointments map
           JOIN carrier_to_line_matrix cm ON cm.carrier_naic = map.carrier_naic
           WHERE map.is_active

@@ -7,88 +7,77 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
   const result = await getMarketEventById(resolvedParams.id);
 
   if (!result.configured) {
-    return (
-      <div className="rounded-md border border-red-500 bg-red-50 p-4 text-red-700">
-        Database not configured. Missing: {result.missing?.join(", ")}
-      </div>
-    );
+    return <div className="rounded-xl border border-red-500 bg-red-50 p-6 text-red-700">Database not configured. Missing: {result.missing?.join(", ")}</div>;
   }
-
   if (result.error) {
-    return (
-      <div className="rounded-md border border-red-500 bg-red-50 p-4 text-red-700">
-        Error loading event: {result.error}
-      </div>
-    );
+    return <div className="rounded-xl border border-red-500 bg-red-50 p-6 text-red-700">Error loading event: {result.error}</div>;
   }
-
+  
   const event = result.row;
-
-  if (!event) {
-    notFound();
-  }
+  if (!event) notFound();
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center space-x-4">
-        <Link href="/admin/events" className="text-moss hover:underline">
-          &larr; Back to Events
-        </Link>
+    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
+      <Link href="/admin/events" className="inline-flex items-center text-moss hover:text-moss/80 font-medium transition-colors">
+        <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+        Back to Global Radar
+      </Link>
+
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="flex items-center space-x-3 mb-2">
+            <span className={`px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase ${
+              event.event_type.includes('BLEEDING') ? 'bg-green-100 text-green-800' : 
+              event.event_type.includes('ENCROACHMENT') ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'
+            }`}>
+              {event.event_type.replace(/_/g, ' ')}
+            </span>
+            <span className="text-sm font-medium text-black/40">
+              {new Date(event.detected_at).toLocaleString()}
+            </span>
+          </div>
+          <h1 className="text-4xl font-black text-ink tracking-tight mt-4">Event Dossier</h1>
+        </div>
       </div>
 
-      <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-moss">Event Detail</p>
-        <h2 className="text-3xl font-semibold text-ink">{event.event_type}</h2>
-        <p className="text-sm text-black/60 mt-1">Detected at: {event.detected_at}</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="rounded-md border border-black/10 bg-white p-5 space-y-4">
-          <h3 className="font-semibold text-lg border-b pb-2">Context</h3>
-          <dl className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-black/60">Review Status</dt>
-              <dd className="font-medium">{event.review_status}</dd>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-10">
+        <div className="space-y-6">
+          <h3 className="text-xl font-bold border-b pb-2 text-ink">Metadata</h3>
+          <div className="bg-white rounded-2xl border border-black/10 p-6 space-y-4 shadow-sm">
+            <div className="flex justify-between border-b border-black/5 pb-3">
+              <span className="text-black/50">Agency</span>
+              <div className="text-right">
+                <span className="font-bold block">{event.payload?.agency_name || event.target_agency_id || "N/A"}</span>
+                {event.payload?.agency_name && <span className="text-xs text-black/40">{event.target_agency_id}</span>}
+              </div>
             </div>
-            <div className="flex justify-between">
-              <dt className="text-black/60">Target Agency ID</dt>
-              <dd className="font-medium">{event.target_agency_id || "N/A"}</dd>
+            {event.target_agent_npn && (
+              <div className="flex justify-between border-b border-black/5 pb-3">
+                <span className="text-black/50">Agent</span>
+                <div className="text-right">
+                  <span className="font-bold block">{event.payload?.agent_name || event.target_agent_npn}</span>
+                  {event.payload?.agent_name && <span className="text-xs text-black/40">NPN: {event.target_agent_npn}</span>}
+                </div>
+              </div>
+            )}
+            <div className="flex justify-between border-b border-black/5 pb-3">
+              <span className="text-black/50">Location</span>
+              <span className="font-bold">{event.event_zip} {event.event_county ? `(${event.event_county})` : ''}</span>
             </div>
-            <div className="flex justify-between">
-              <dt className="text-black/60">Target Agent NPN</dt>
-              <dd className="font-medium">{event.target_agent_npn || "N/A"}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-black/60">Carrier NAIC</dt>
-              <dd className="font-medium">{event.carrier_naic || "N/A"}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-black/60">ZIP / Location</dt>
-              <dd className="font-medium">{event.event_zip || "N/A"}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-black/60">County</dt>
-              <dd className="font-medium">{event.event_county || "N/A"}</dd>
-            </div>
-            <div className="flex justify-between items-center">
-              <dt className="text-black/60">Geo-Routing</dt>
-              <dd>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${event.is_processed ? "bg-green-100 text-green-800 border border-green-200" : "bg-yellow-100 text-yellow-800 border border-yellow-200"}`}>
-                  {event.is_processed ? "Processed" : "Pending"}
-                </span>
-              </dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-black/60">Confidence</dt>
-              <dd className="font-medium capitalize">{event.confidence || "N/A"}</dd>
-            </div>
-          </dl>
+            {event.payload?.tenure_months && (
+              <div className="flex justify-between border-b border-black/5 pb-3">
+                <span className="text-black/50">Tenure</span>
+                <span className="font-bold">{Math.floor(event.payload.tenure_months / 12)} Years, {event.payload.tenure_months % 12} Months</span>
+              </div>
+            )}
+            <div className="flex justify-between"><span className="text-black/50">Confidence</span><span className="font-bold uppercase text-moss">{event.confidence}</span></div>
+          </div>
         </div>
 
-        <div className="rounded-md border border-black/10 bg-white p-5 space-y-4">
-          <h3 className="font-semibold text-lg border-b pb-2">Payload</h3>
-          <div className="bg-field p-4 rounded text-sm overflow-x-auto">
-            <pre className="text-ink">
+        <div className="space-y-6">
+          <h3 className="text-xl font-bold border-b pb-2 text-ink">Raw Payload</h3>
+          <div className="bg-slate-900 rounded-2xl p-6 shadow-xl overflow-x-auto h-[400px]">
+            <pre className="text-green-400 font-mono text-sm">
               {JSON.stringify(event.payload, null, 2)}
             </pre>
           </div>
