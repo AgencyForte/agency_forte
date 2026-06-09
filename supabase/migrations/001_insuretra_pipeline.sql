@@ -8,7 +8,8 @@ BEGIN
       'NEW_MARKET_ENTRY',
       'CARRIER_LAND_GRAB',
       'COMPETITOR_BLEEDING',
-      'TRAPPED_TALENT_IDENTIFIED'
+      'TRAPPED_TALENT_IDENTIFIED',
+      'LOB_ENCROACHMENT'
     );
   END IF;
 
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS master_agencies (
   county TEXT,
   first_seen_date DATE NOT NULL DEFAULT CURRENT_DATE,
   source_dataset TEXT NOT NULL DEFAULT '3yqc-fcdt',
+  in_target_zone BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -54,6 +56,7 @@ CREATE TABLE IF NOT EXISTS master_agents (
   state TEXT,
   postal_code TEXT,
   first_seen_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  in_target_zone BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -235,6 +238,13 @@ CREATE TABLE IF NOT EXISTS stage_agent_appointments (
   structural_hash TEXT
 );
 
+CREATE TABLE IF NOT EXISTS carrier_to_line_matrix (
+  carrier_naic TEXT PRIMARY KEY,
+  carrier_name TEXT NOT NULL,
+  line_of_business TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_master_agencies_zip ON master_agencies(physical_zip);
 CREATE INDEX IF NOT EXISTS idx_master_links_agency ON master_agent_agency_links(agency_tdi_id);
 CREATE INDEX IF NOT EXISTS idx_master_links_active ON master_agent_agency_links(is_active);
@@ -245,4 +255,6 @@ CREATE INDEX IF NOT EXISTS idx_suppressed_severances_detected ON suppressed_seve
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_started ON pipeline_runs(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_pipeline_anomalies_detected ON pipeline_anomalies(detected_at DESC);
 CREATE INDEX IF NOT EXISTS idx_texas_zip_geo_centroid ON texas_zip_geo USING GIST(centroid);
+CREATE INDEX IF NOT EXISTS idx_master_agencies_target_zone ON master_agencies(in_target_zone) WHERE in_target_zone = TRUE;
+CREATE INDEX IF NOT EXISTS idx_master_agents_target_zone ON master_agents(in_target_zone) WHERE in_target_zone = TRUE;
 

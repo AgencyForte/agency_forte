@@ -3,13 +3,15 @@ from __future__ import annotations
 import argparse
 from dotenv import load_dotenv
 
+import polars as pl
+
 from .config import DATASETS, get_settings, resolve_dataset_keys
 from .db import connect, reset_staging_and_load
 from .normalize import normalize_rows
 from .socrata import fetch_dataset_rows
 
 
-def fetch_and_normalize(dataset_key: str) -> tuple[str, list[dict]]:
+def fetch_and_normalize(dataset_key: str) -> tuple[str, pl.DataFrame]:
     settings = get_settings()
     dataset = DATASETS[dataset_key]
     raw_rows = fetch_dataset_rows(dataset, settings.socrata_app_token)

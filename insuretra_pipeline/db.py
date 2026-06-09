@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import date
+import io
 import json
 from typing import Any, Iterable
 
+import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
@@ -60,14 +62,15 @@ def truncate_staging(conn, tables: Iterable[str]) -> None:
         conn.execute(f"TRUNCATE TABLE {table}")
 
 
-def insert_rows(conn, table: str, rows: list[dict[str, Any]]) -> None:
-    if not rows:
+def insert_rows(conn, table: str, df: pl.DataFrame) -> None:
+    if df.is_empty():
         return
-    columns = list(rows[0].keys())
-    placeholders = ", ".join(["%s"] * len(columns))
-    column_list = ", ".join(columns)
-    values = [tuple(row.get(column) for column in columns) for row in rows]
-    conn.executemany(f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})", values)
+    buffer = io.BytesIO()
+    df.write_csv(buffer)
+    buffer.seek(0)
+    with conn.cursor() as cur:
+        with cur.copy(f"COPY {table} FROM STDIN WITH CSV HEADER") as copy:
+            copy.write(buffer.read())
 
 
 def get_stage_counts(conn) -> dict[str, int]:
@@ -242,6 +245,59 @@ def generate_events_sql(conn) -> None:
         ON CONFLICT (event_fingerprint) DO NOTHING
         """
     )
+    conn.execute(
+        """
+        INSERT INTO market_timeline (
+          event_type, target_agency_id, target_agent_npn, event_zip, event_county, confidence, event_fingerprint, payload
+        )
+        SELECT
+          'LOB_ENCROACHMENT',
+          l.agency_tdi_id,
+          l.agent_npn,
+          a.physical_zip,
+          a.county,
+          'high',
+          encode(digest('LOB_ENCROACHMENT|' || l.agent_npn || '|' || l.agency_tdi_id || '|' || CURRENT_DATE::TEXT, 'sha256'), 'hex'),
+          jsonb_build_object('source_rule', 'veteran_hire_overlap', 'lines_overlapped', overlapping.lines)
+        FROM stage_agent_agency_links l
+        LEFT JOIN master_agent_agency_links m ON m.structural_hash = l.structural_hash
+        JOIN master_agents ma ON ma.agent_npn = l.agent_npn
+        JOIN master_agencies a ON a.agency_tdi_id = l.agency_tdi_id
+        JOIN (
+          SELECT agent_npn, array_agg(DISTINCT cm.line_of_business) AS lines
+          FROM master_agent_appointments map
+          JOIN carrier_to_line_matrix cm ON cm.carrier_naic = map.carrier_naic
+          WHERE map.is_active
+          GROUP BY agent_npn
+        ) overlapping ON overlapping.agent_npn = l.agent_npn
+        WHERE m.structural_hash IS NULL
+          AND LOWER(l.association_type) = 'sub-agent'
+          -- assume veteran if seen in master for a while or has appointments
+        ON CONFLICT (event_fingerprint) DO NOTHING
+        """
+    )
+
+
+def process_events_geo(conn) -> None:
+    conn.execute(
+        """
+        WITH geo_matched AS (
+          SELECT m.event_id, z.centroid, z.geometry
+          FROM market_timeline m
+          JOIN texas_zip_geo z ON z.zip = m.event_zip
+          WHERE NOT m.is_processed AND m.event_zip IS NOT NULL
+        )
+        UPDATE market_timeline m
+        SET is_processed = TRUE,
+            payload = jsonb_set(
+              m.payload, 
+              '{geo_routing}', 
+              jsonb_build_object('processed', true, 'zip', m.event_zip)
+            )
+        FROM geo_matched g
+        WHERE m.event_id = g.event_id;
+        """
+    )
 
 
 def consolidate_master_sql(conn) -> None:
@@ -385,8 +441,8 @@ def consolidate_master_sql(conn) -> None:
     )
 
 
-def reset_staging_and_load(conn, staged: dict[str, tuple[str, list[dict[str, Any]]]]) -> None:
+def reset_staging_and_load(conn, staged: dict[str, tuple[str, pl.DataFrame]]) -> None:
     truncate_staging(conn, [table for table, _ in staged.values()])
-    for table, rows in staged.values():
-        insert_rows(conn, table, rows)
+    for table, df in staged.values():
+        insert_rows(conn, table, df)
     conn.commit()

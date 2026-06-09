@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import polars as pl
 from datetime import date
 from dotenv import load_dotenv
 
@@ -8,14 +9,14 @@ from .db import connect, generate_events_sql, reset_staging_and_load
 from .hashing import structural_hash
 
 
-def fixture_rows() -> dict[str, tuple[str, list[dict]]]:
+def fixture_rows() -> dict[str, tuple[str, pl.DataFrame]]:
     old_hash = structural_hash("9001", "npn:agency-old", "Sub-Agent")
     short_hash = structural_hash("9002", "npn:agency-short", "Sub-Agent")
     active_hash = structural_hash("9003", "npn:agency-active", "Sub-Agent")
     return {
         "agencies": (
             "stage_agencies",
-            [
+            pl.DataFrame([
                 {
                     "agency_tdi_id": "npn:agency-new",
                     "agency_npn": "agency-new",
@@ -31,11 +32,11 @@ def fixture_rows() -> dict[str, tuple[str, list[dict]]]:
                     "postal_code": "78701",
                     "county": "Travis",
                 }
-            ],
+            ], schema_overrides={"agency_ein": pl.Utf8, "expiration_date": pl.Date}),
         ),
         "relationships": (
             "stage_agent_agency_links",
-            [
+            pl.DataFrame([
                 {
                     "agent_npn": "9003",
                     "agent_name": "Active Producer",
@@ -47,10 +48,10 @@ def fixture_rows() -> dict[str, tuple[str, list[dict]]]:
                     "confidence": "high",
                     "structural_hash": active_hash,
                 }
-            ],
+            ], schema_overrides={"agency_ein": pl.Utf8}),
         ),
-        "agency_appointments": ("stage_agency_appointments", []),
-        "agent_appointments": ("stage_agent_appointments", []),
+        "agency_appointments": ("stage_agency_appointments", pl.DataFrame(schema={"agency_tdi_id": pl.Utf8, "agency_ein": pl.Utf8, "agency_name": pl.Utf8, "carrier_naic": pl.Utf8, "carrier_name": pl.Utf8, "appointment_type": pl.Utf8, "effective_date": pl.Date, "city": pl.Utf8, "state": pl.Utf8, "postal_code": pl.Utf8, "structural_hash": pl.Utf8})),
+        "agent_appointments": ("stage_agent_appointments", pl.DataFrame(schema={"agent_npn": pl.Utf8, "agent_name": pl.Utf8, "carrier_naic": pl.Utf8, "carrier_name": pl.Utf8, "appointment_type": pl.Utf8, "effective_date": pl.Date, "city": pl.Utf8, "state": pl.Utf8, "postal_code": pl.Utf8, "structural_hash": pl.Utf8})),
     }
 
 
