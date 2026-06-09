@@ -12,12 +12,12 @@ def db_connection():
     
     url = settings.database_url
     
-    # Load schema (ensure it is safe to run on the target DB)
-    schema_path = Path(__file__).parent.parent / "supabase" / "migrations" / "001_insuretra_pipeline.sql"
-    with open(schema_path, "r") as f:
-        schema_sql = f.read()
-
+    # Load schema migrations in order
+    migrations_dir = Path(__file__).parent.parent / "supabase" / "migrations"
+    
     with connect(url) as conn:
-        conn.execute(schema_sql)
+        for sql_file in sorted(migrations_dir.glob("*.sql")):
+            with open(sql_file, "r") as f:
+                conn.execute(f.read())
         conn.commit()
         yield conn
