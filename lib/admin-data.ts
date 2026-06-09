@@ -93,6 +93,21 @@ export async function getMarketEventById(eventId: string): Promise<{ configured:
   };
 }
 
+export async function getBuyerAlerts(buyerId: string): Promise<{ configured: boolean; missing?: string[]; rows: MarketEvent[]; error?: string }> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase.configured) {
+    return { configured: false, missing: supabase.missing, rows: [] };
+  }
+
+  const { data, error } = await supabase.client.rpc("get_buyer_alerts", { p_buyer_agency_id: buyerId });
+
+  return {
+    configured: true,
+    rows: (data ?? []) as MarketEvent[],
+    error: error?.message
+  };
+}
+
 export type ArbitrageTarget = {
   target_agent_npn: string;
   agent_name: string;
