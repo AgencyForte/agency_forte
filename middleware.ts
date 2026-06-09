@@ -1,25 +1,29 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  const passwordConfigured = Boolean(process.env.INSURETRA_ADMIN_PASSWORD);
-  const isAdminPath = request.nextUrl.pathname.startsWith("/admin");
-  const isLoginPath = request.nextUrl.pathname.startsWith("/admin/login");
+  const isWarRoom = request.nextUrl.pathname.startsWith('/war-room');
+  
+  if (isWarRoom) {
+    const session = request.cookies.get('af_session')?.value;
+    
+    // Check if the URL already has a paranoia query param to force UI state
+    // Or if the session is missing
+    const isPublic = !session && request.nextUrl.searchParams.get('auth') !== 'true';
 
-  if (!isAdminPath || isLoginPath || !passwordConfigured) {
-    return NextResponse.next();
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-is-public', isPublic ? 'true' : 'false');
+
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    });
   }
 
-  const authenticated = request.cookies.get("insuretra_admin")?.value === "1";
-  if (authenticated) {
-    return NextResponse.next();
-  }
-
-  const loginUrl = request.nextUrl.clone();
-  loginUrl.pathname = "/admin/login";
-  loginUrl.searchParams.set("next", request.nextUrl.pathname);
-  return NextResponse.redirect(loginUrl);
+  return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/admin/:path*"]
+  matcher: ['/war-room/:path*'],
 };

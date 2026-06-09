@@ -108,6 +108,51 @@ type LayoutConfig<Route extends LayoutRoutes = LayoutRoutes> = {
   type __Unused = __Check
 }
 
+// Validate ../../app/war-room/defense/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/war-room/defense">> = Specific
+  const handler = {} as typeof import("../../app/war-room/defense/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../app/war-room/map/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/war-room/map">> = Specific
+  const handler = {} as typeof import("../../app/war-room/map/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../app/war-room/offense/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/war-room/offense">> = Specific
+  const handler = {} as typeof import("../../app/war-room/offense/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../app/war-room/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/war-room">> = Specific
+  const handler = {} as typeof import("../../app/war-room/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../app/war-room/recruit/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/war-room/recruit">> = Specific
+  const handler = {} as typeof import("../../app/war-room/recruit/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 
 
 
@@ -127,6 +172,15 @@ type LayoutConfig<Route extends LayoutRoutes = LayoutRoutes> = {
 {
   type __IsExpected<Specific extends LayoutConfig<"/">> = Specific
   const handler = {} as typeof import("../../app/layout.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../app/war-room/layout.tsx
+{
+  type __IsExpected<Specific extends LayoutConfig<"/war-room">> = Specific
+  const handler = {} as typeof import("../../app/war-room/layout.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check
