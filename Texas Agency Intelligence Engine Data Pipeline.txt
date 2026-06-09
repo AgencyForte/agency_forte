@@ -1,0 +1,120 @@
+Here is the comprehensive, engineering-ready data pipeline specification.
+
+# Texas Agency Intelligence Engine: Data Pipeline Specification
+
+## 1. Source Data Definition
+
+The pipeline relies on the Texas Department of Insurance (TDI) open data portal, specifically the data group defining **Company appointments and sub-agent relationships for agencies and individuals**.
+
+We ingest three specific datasets nightly via bulk CSV/JSON endpoints:
+
+1. **Agency–Carrier Linkage:** Active insurance company appointments for agencies and businesses.
+2. **Agent–Carrier Linkage:** Active insurance company appointments for agents and adjusters.
+3. **Agent–Agency Linkage:** Business relationships between agents, agencies, adjusters, and insurance companies.
+
+## 2. Infrastructure & Tooling Stack
+
+* **Orchestration & Compute:** GitHub Actions (scheduled `cron` workflows).
+* **Data Processing:** Python 3.11 utilizing `Polars` for fast, memory-efficient vectorized operations on bulk data.
+* **Database:** PostgreSQL (Supabase) with the `PostGIS` extension enabled for lightweight spatial distance calculations.
+* **Monitoring:** Pipeline logs written to a Postgres `pipeline_logs` table; critical anomalies trigger Slack/Discord webhooks.
+
+## 3. Database Schema Blueprint
+
+The schema is separated into three tiers: Staging (ephemeral), Production (master state), and the Timeline (immutable events).
+
+### Master State Tables
+
+```sql
+CREATE TABLE master_agencies (
+    agency_tdi_id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    physical_zip VARCHAR(10),
+    first_seen_date DATE
+);
+
+CREATE TABLE master_agents (
+    agent_npn VARCHAR(50) PRIMARY KEY,
+    full_name VARCHAR(255) NOT NULL,
+    first_seen_date DATE
+);
+
+CREATE TABLE master_agent_agency_links (
+    agent_npn VARCHAR(50) REFERENCES master_agents(agent_npn),
+    agency_tdi_id VARCHAR(50) REFERENCES master_agencies(agency_tdi_id),
+    effective_date DATE,
+    structural_hash VARCHAR(64) UNIQUE, -- SHA256 signature of the relationship
+    PRIMARY KEY (agent_npn, agency_tdi_id)
+);
+
+CREATE TABLE master_agency_appointments (
+    agency_tdi_id VARCHAR(50) REFERENCES master_agencies(agency_tdi_id),
+    carrier_naic VARCHAR(50),
+    carrier_name VARCHAR(255),
+    effective_date DATE,
+    structural_hash VARCHAR(64) UNIQUE,
+    PRIMARY KEY (agency_tdi_id, carrier_naic)
+);
+
+```
+
+### The Immutable Threat Timeline
+
+```sql
+CREATE TYPE threat_event_type AS ENUM (
+    'NEW_MARKET_ENTRY', 
+    'CARRIER_LAND_GRAB', 
+    'COMPETITOR_BLEEDING', 
+    'TRAPPED_TALENT_IDENTIFIED'
+);
+
+CREATE TABLE market_timeline (
+    event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    detected_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    event_type threat_event_type NOT NULL,
+    target_agency_id VARCHAR(50) REFERENCES master_agencies(agency_tdi_id),
+    target_agent_npn VARCHAR(50), -- Nullable based on event type
+    carrier_naic VARCHAR(50),     -- Nullable based on event type
+    event_zip VARCHAR(10),
+    is_processed BOOLEAN DEFAULT FALSE
+);
+
+```
+
+---
+
+## 4. Daily Execution Flow
+
+1. **Extract & Stage:** Execution: 02:00 AM CST.
+A Python script via GitHub Actions fetches the three target datasets directly from the `data.texas.gov` Socrata API endpoints. Using `Polars`, the script parses the data, cleans null values, computes the `structural_hash` for relationship rows, and uses PostgreSQL `COPY` to write the data into ephemeral tables (`stage_agencies`, `stage_links`, `stage_appointments`). Previous staging data is truncated prior to the write.
+
+
+2. **Anomaly Detection (The Dump Guard):** Execution: Pre-Diff Validation.
+The script counts the row differences between staging and production. If the delta exceeds 1,500 rows statewide in a single 24-hour cycle, the pipeline assumes an administrative batch update by TDI or a major carrier migration.
+
+If the threshold is breached, the script bypasses event generation, silently updates the master tables using the `structural_hash` to ignore artificial `effective_date` overwrites, logs a `BULK_UPDATE_QUARANTINE` warning to Slack, and gracefully terminates the run.
+
+
+3. **Event Diffing & Threat Generation:** Execution: SQL Set Operations.
+If the data volume passes the sanity check, the pipeline executes rapid `EXCEPT` operations to isolate structural shifts.
+
+* **Competitor Bleeding (Orphaned Accounts):** Find Agent NPNs that exist in `master_agent_agency_links` but are missing from `stage_links`. Write a `COMPETITOR_BLEEDING` event targeting the agency ID.
+* **Carrier Land-Grab:** Find relationships in `stage_appointments` missing from `master_agency_appointments`. If the agency is older than 30 days, generate a `CARRIER_LAND_GRAB` event.
+* **New Market Entry:** Identify any `agency_tdi_id` in `stage_agencies` missing from `master_agencies`. Generate a `NEW_MARKET_ENTRY` event.
+
+
+4. **Master State Consolidation:** Execution: UPSERT.
+To ensure tomorrow's diffing baseline is accurate, the pipeline executes a transaction to `INSERT ... ON CONFLICT DO NOTHING` from the staging tables into the master tables, committing the new agents, agencies, and validated relationships to the permanent state.
+
+
+5. **Geo-Tagging & Payload Routing:** Execution: Post-Processing.
+A secondary script queries the newly created `market_timeline` rows where `is_processed = FALSE`. It joins the event target against the static `texas_zip_geo` PostGIS table to calculate affected radiuses. The script groups the events by local threat zones and triggers localized JSON payloads to the outbound email/marketing engine (e.g., Resend). Finally, it sets `is_processed = TRUE`.
+
+
+---
+
+## 5. Security & Compliance Parameters
+
+* **Rate Limiting:** API requests to the Socrata portal must include a valid Application Token to receive elevated rate limits and avoid generic throttle bans.
+* **Endpoint Usage:** The pipeline strictly avoids scraping the TDI UI. All data is sourced from officially sanctioned `/resource` endpoints in compliance with the Texas Public Information Act.
+* **Data Provenance:** Every row written to the `market_timeline` retains the raw TDI IDs (`agency_tdi_id`, `agent_npn`) to allow for full manual auditing and verification by users if data accuracy is challenged.
