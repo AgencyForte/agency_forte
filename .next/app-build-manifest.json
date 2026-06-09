@@ -20,6 +20,26 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/admin/pipeline-runs/page.js"
+    ],
+    "/admin/events/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/events/page.js"
+    ],
+    "/admin/suppressed-severances/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/suppressed-severances/page.js"
+    ],
+    "/admin/anomalies/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/anomalies/page.js"
+    ],
+    "/admin/events/[id]/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/events/[id]/page.js"
     ]
   }
 }

@@ -41,9 +41,12 @@ export type MarketEvent = {
   target_agency_id: string | null;
   target_agent_npn: string | null;
   carrier_naic: string | null;
+  carrier_name: string | null;
   event_zip: string | null;
+  event_county: string | null;
   confidence: string | null;
   payload?: any;
+  is_processed: boolean;
 };
 
 export type SuppressedSeverance = {

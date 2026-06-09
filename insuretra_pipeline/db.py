@@ -112,9 +112,9 @@ def generate_events_sql(conn) -> None:
               + DATE_PART('month', AGE(CURRENT_DATE, COALESCE(m.relationship_started_at, m.first_seen_date)))
             )::INT
           END,
-          'TENURE_UNDER_24_MONTHS',
+          'TENURE_UNDER_36_MONTHS',
           m.structural_hash,
-          jsonb_build_object('source_rule', '24_month_tenure_filter', 'association_type', m.association_type)
+          jsonb_build_object('source_rule', '36_month_tenure_filter', 'association_type', m.association_type)
         FROM master_agent_agency_links m
         LEFT JOIN stage_agent_agency_links s ON s.structural_hash = m.structural_hash
         WHERE m.is_active
@@ -125,7 +125,7 @@ def generate_events_sql(conn) -> None:
             OR (
               DATE_PART('year', AGE(CURRENT_DATE, COALESCE(m.relationship_started_at, m.first_seen_date))) * 12
               + DATE_PART('month', AGE(CURRENT_DATE, COALESCE(m.relationship_started_at, m.first_seen_date)))
-            ) < 24
+            ) < 36
           )
         ON CONFLICT (structural_hash, relationship_ended_at) DO NOTHING
         """
@@ -144,16 +144,57 @@ def generate_events_sql(conn) -> None:
           a.county,
           m.confidence,
           encode(digest('COMPETITOR_BLEEDING|' || m.agent_npn || '|' || m.agency_tdi_id || '|' || CURRENT_DATE::TEXT, 'sha256'), 'hex'),
-          jsonb_build_object('source_rule', '24_month_tenure_filter', 'association_type', m.association_type)
+          jsonb_build_object(
+            'source_rule', '36_month_tenure_filter', 
+            'association_type', m.association_type,
+            'departing_carriers', COALESCE(carriers.carrier_list, '[]'::jsonb)
+          )
         FROM master_agent_agency_links m
         LEFT JOIN stage_agent_agency_links s ON s.structural_hash = m.structural_hash
         LEFT JOIN master_agencies a ON a.agency_tdi_id = m.agency_tdi_id
+        LEFT JOIN LATERAL (
+          SELECT jsonb_agg(jsonb_build_object('carrier_naic', map.carrier_naic, 'carrier_name', map.carrier_name)) AS carrier_list
+          FROM master_agent_appointments map
+          WHERE map.agent_npn = m.agent_npn AND map.is_active
+        ) carriers ON TRUE
         WHERE m.is_active
           AND LOWER(m.association_type) = 'sub-agent'
           AND s.structural_hash IS NULL
           AND (
             DATE_PART('year', AGE(CURRENT_DATE, COALESCE(m.relationship_started_at, m.first_seen_date))) * 12
             + DATE_PART('month', AGE(CURRENT_DATE, COALESCE(m.relationship_started_at, m.first_seen_date)))
+          ) >= 36
+        ON CONFLICT (event_fingerprint) DO NOTHING
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO market_timeline (
+          event_type, target_agency_id, carrier_naic, carrier_name, event_zip, event_county,
+          confidence, event_fingerprint, payload
+        )
+        SELECT
+          'COMPETITOR_BLEEDING',
+          m.agency_tdi_id,
+          m.carrier_naic,
+          m.carrier_name,
+          a.physical_zip,
+          a.county,
+          'high',
+          encode(digest('COMPETITOR_BLEEDING_CARRIER|' || m.agency_tdi_id || '|' || m.carrier_naic || '|' || COALESCE(m.appointment_type, '') || '|' || CURRENT_DATE::TEXT, 'sha256'), 'hex'),
+          jsonb_build_object(
+            'source_rule', 'agency_lost_carrier',
+            'appointment_type', m.appointment_type,
+            'effective_date', m.effective_date
+          )
+        FROM master_agency_appointments m
+        LEFT JOIN stage_agency_appointments s ON s.structural_hash = m.structural_hash
+        LEFT JOIN master_agencies a ON a.agency_tdi_id = m.agency_tdi_id
+        WHERE m.is_active
+          AND s.structural_hash IS NULL
+          AND (
+            DATE_PART('year', AGE(CURRENT_DATE, COALESCE(m.effective_date, m.first_seen_date))) * 12
+            + DATE_PART('month', AGE(CURRENT_DATE, COALESCE(m.effective_date, m.first_seen_date)))
           ) >= 24
         ON CONFLICT (event_fingerprint) DO NOTHING
         """
@@ -211,37 +252,6 @@ def generate_events_sql(conn) -> None:
           encode(digest('NEW_MARKET_ENTRY|' || i.agency_tdi_id, 'sha256'), 'hex'),
           jsonb_build_object('agency_name', i.name)
         FROM inserted i
-        ON CONFLICT (event_fingerprint) DO NOTHING
-        """
-    )
-    conn.execute(
-        """
-        INSERT INTO market_timeline (
-          event_type, target_agency_id, target_agent_npn, confidence, event_fingerprint, payload
-        )
-        SELECT
-          'TRAPPED_TALENT_IDENTIFIED',
-          l.agency_tdi_id,
-          l.agent_npn,
-          'beta_manual_review',
-          encode(digest('TRAPPED_TALENT_IDENTIFIED|' || l.agent_npn || '|' || l.agency_tdi_id, 'sha256'), 'hex'),
-          jsonb_build_object('source_rule', 'agent_has_more_carriers_than_agency', 'review_required', true)
-        FROM stage_agent_agency_links l
-        JOIN master_agents ma ON ma.agent_npn = l.agent_npn
-        JOIN master_agencies mg ON mg.agency_tdi_id = l.agency_tdi_id
-        JOIN (
-          SELECT agent_npn, COUNT(DISTINCT carrier_naic) AS agent_carriers
-          FROM stage_agent_appointments
-          GROUP BY agent_npn
-        ) aa ON aa.agent_npn = l.agent_npn
-        LEFT JOIN (
-          SELECT agency_tdi_id, COUNT(DISTINCT carrier_naic) AS agency_carriers
-          FROM stage_agency_appointments
-          GROUP BY agency_tdi_id
-        ) ga ON ga.agency_tdi_id = l.agency_tdi_id
-        WHERE LOWER(l.association_type) = 'sub-agent'
-          AND aa.agent_carriers >= 3
-          AND COALESCE(ga.agency_carriers, 0) < aa.agent_carriers
         ON CONFLICT (event_fingerprint) DO NOTHING
         """
     )

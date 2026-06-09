@@ -8,34 +8,42 @@ def test_competitor_bleeding_and_market_arbitrage(db_connection):
     db_connection.execute("INSERT INTO master_agencies (agency_tdi_id, name) VALUES ('npn:ag1', 'Agency 1'), ('npn:ag2', 'Agency 2') ON CONFLICT DO NOTHING")
     db_connection.execute("INSERT INTO master_agents (agent_npn, full_name) VALUES ('9001', 'Agent 1'), ('9002', 'Agent 2') ON CONFLICT DO NOTHING")
     
-    # 4.1 Competitor bleeding: Agent was in master for 24 months, but not in staging
+    # Seed carrier for departing agent
+    db_connection.execute("""
+        INSERT INTO master_agent_appointments (agent_npn, carrier_naic, carrier_name, appointment_type, is_active, structural_hash)
+        VALUES ('9001', 'C_DEP', 'Departing Carrier', 'Life', TRUE, 'hash_app_1')
+    """)
+
+    # 4.1 Competitor bleeding: Agent was in master for 36+ months, but not in staging
     db_connection.execute("""
         INSERT INTO master_agent_agency_links (agent_npn, agency_tdi_id, association_type, relationship_started_at, structural_hash, is_active)
-        VALUES ('9001', 'npn:ag1', 'Sub-Agent', CURRENT_DATE - INTERVAL '25 months', 'hash_bleed_1', TRUE)
+        VALUES ('9001', 'npn:ag1', 'Sub-Agent', CURRENT_DATE - INTERVAL '37 months', 'hash_bleed_1', TRUE)
     """)
     
-    # 4.2 Trapped talent: Agent has 3 carriers, Agency has 0
-    # Add 3 agent appointments
+    # 4.1b Competitor bleeding (Carrier Pull-out): Agency lost an appointment (24+ months tenure)
     db_connection.execute("""
-        INSERT INTO stage_agent_appointments (agent_npn, carrier_naic, appointment_type, structural_hash)
-        VALUES 
-          ('9002', 'C1', 'Life', 'h1'),
-          ('9002', 'C2', 'Life', 'h2'),
-          ('9002', 'C3', 'Life', 'h3')
+        INSERT INTO master_agency_appointments (agency_tdi_id, carrier_naic, carrier_name, appointment_type, is_active, structural_hash, effective_date)
+        VALUES ('npn:ag1', 'C_LOST', 'Lost Carrier', 'PNC', TRUE, 'hash_lost_1', CURRENT_DATE - INTERVAL '25 months')
     """)
-    db_connection.execute("""
-        INSERT INTO stage_agent_agency_links (agent_npn, agency_tdi_id, association_type, structural_hash)
-        VALUES ('9002', 'npn:ag2', 'Sub-Agent', 'hash_trapped_1')
-    """)
+
 
     generate_events_sql(db_connection)
     db_connection.commit()
     
-    events = db_connection.execute("SELECT event_type, target_agent_npn FROM market_timeline").fetchall()
-    event_types = {e["event_type"] for e in events}
+    events = db_connection.execute("SELECT event_type, target_agent_npn, target_agency_id, payload FROM market_timeline").fetchall()
     
+    # Assert Agent Bleeding (36+ months)
+    agent_bleed = next((e for e in events if e["event_type"] == "COMPETITOR_BLEEDING" and e["target_agent_npn"] == "9001"), None)
+    assert agent_bleed is not None
+    assert "departing_carriers" in agent_bleed["payload"]
+    assert agent_bleed["payload"]["departing_carriers"][0]["carrier_naic"] == "C_DEP"
+
+    # Assert Carrier Pull-out Bleeding
+    carrier_bleed = next((e for e in events if e["event_type"] == "COMPETITOR_BLEEDING" and e["target_agent_npn"] is None and e["target_agency_id"] == "npn:ag1"), None)
+    assert carrier_bleed is not None
+    assert carrier_bleed["payload"]["source_rule"] == "agency_lost_carrier"
+
     assert "COMPETITOR_BLEEDING" in event_types
-    assert "TRAPPED_TALENT_IDENTIFIED" in event_types
 
 def test_lob_encroachment_and_geo_routing(db_connection):
     """Test Cases 4.3 & 5.1"""

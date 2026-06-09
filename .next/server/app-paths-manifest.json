@@ -1,4 +1,6 @@
 {
-  "/page": "app/page.js",
-  "/admin/pipeline-runs/page": "app/admin/pipeline-runs/page.js"
+  "/admin/pipeline-runs/page": "app/admin/pipeline-runs/page.js",
+  "/admin/events/page": "app/admin/events/page.js",
+  "/admin/suppressed-severances/page": "app/admin/suppressed-severances/page.js",
+  "/admin/events/[id]/page": "app/admin/events/[id]/page.js"
 }

@@ -67,6 +67,18 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
               <dd className="font-medium">{event.event_zip || "N/A"}</dd>
             </div>
             <div className="flex justify-between">
+              <dt className="text-black/60">County</dt>
+              <dd className="font-medium">{event.event_county || "N/A"}</dd>
+            </div>
+            <div className="flex justify-between items-center">
+              <dt className="text-black/60">Geo-Routing</dt>
+              <dd>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${event.is_processed ? "bg-green-100 text-green-800 border border-green-200" : "bg-yellow-100 text-yellow-800 border border-yellow-200"}`}>
+                  {event.is_processed ? "Processed" : "Pending"}
+                </span>
+              </dd>
+            </div>
+            <div className="flex justify-between">
               <dt className="text-black/60">Confidence</dt>
               <dd className="font-medium capitalize">{event.confidence || "N/A"}</dd>
             </div>
